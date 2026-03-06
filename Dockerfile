@@ -20,7 +20,7 @@ COPY deps/plantuml/plantuml*.jar /app/plantuml/plantuml.jar
 
 ENV PLANTUML_JAR_PATH=/app/plantuml/plantuml.jar
 
-EXPOSE 8000
+EXPOSE 8080
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
 

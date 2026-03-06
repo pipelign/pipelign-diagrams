@@ -11,7 +11,7 @@ The service runs the official `plantuml.jar` inside a container and exposes a si
 
 ### API overview
 
-Base URL (Docker default): `http://localhost:8000`
+Base URL (Docker default): `http://localhost:8080`
 
 - **`GET /health`**
   - **Purpose**: Lightweight liveness check.
@@ -112,10 +112,10 @@ docker compose build
 docker compose up pipelign-plantuml
 ```
 
-This starts the server on port **8000**:
+This starts the server on port **8080**:
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 ```
 
 #### Run the API in dev mode (auto-reload)
@@ -204,7 +204,7 @@ pip install -r requirements.txt
 Make sure `plantuml.jar` exists at the path expected by `PLANTUML_JAR_PATH`, then run:
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 Run tests:
