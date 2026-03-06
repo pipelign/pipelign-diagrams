@@ -1,0 +1,37 @@
+services:
+  pipelign-plantuml:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pipelign-plantuml
+    ports:
+      - "8000:8000"
+    environment:
+      PLANTUML_JAR_PATH: /app/plantuml/plantuml.jar
+      LOG_LEVEL: DEBUG
+    restart: unless-stopped
+
+  pipelign-plantuml-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pipelign-plantuml-dev
+    ports:
+      - "8000:8000"
+    environment:
+      PLANTUML_JAR_PATH: /app/plantuml/plantuml.jar
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ./app:/app/app
+      - ./tests:/app/tests
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  pipelign-plantuml-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pipelign-plantuml-tests
+    environment:
+      PLANTUML_JAR_PATH: /app/plantuml/plantuml.jar
+      LOG_LEVEL: DEBUG
+    command: ["python", "-m", "unittest", "discover", "-s", "tests"]
