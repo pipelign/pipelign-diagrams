@@ -1,86 +1,111 @@
 from __future__ import annotations
 
-"""
-FastAPI application exposing HTTP endpoints for PlantUML validation and rendering.
-
-The module wires together the HTTP layer (FastAPI), domain models, and the
-PlantUML subprocess integration implemented in ``plantuml_service``. It also
-configures structured logging and centralises error handling so that callers
-always receive predictable JSON payloads.
-"""
+"""FastAPI application for language-agnostic diagram rendering."""
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse
 
+from .diagram_service import diagram_service
+from .errors import DiagramValidationError, RendererInternalError
 from .logging_config import configure_logging
 from .models import (
+    DiagramLanguage,
     InternalErrorResponse,
+    OutputFormat,
     RenderRequest,
     ValidationResult,
-)
-from .plantuml_service import (
-    PlantUMLInternalError,
-    PlantUMLValidationError,
-    render_ascii,
-    render_png,
-    render_svg,
-    validate_diagram,
 )
 
 configure_logging()
 logger = logging.getLogger(__name__)
+UI_PATH = Path(__file__).with_name("static") / "index.html"
 
-app = FastAPI(title="PlantUML Renderer", version="1.0.0")
+app = FastAPI(
+    title="pipelign-diagrams",
+    version="2.0.0",
+    description="Render and validate PlantUML and Mermaid diagrams.",
+)
 
 
-@app.exception_handler(PlantUMLValidationError)
-async def plantuml_validation_error_handler(
-    request: Request, exc: PlantUMLValidationError
+@app.get("/", include_in_schema=False)
+async def test_ui() -> FileResponse:
+    """Serve the lightweight browser UI for exercising the rendering API."""
+    return FileResponse(UI_PATH, media_type="text/html")
+
+
+def _error_headers(error_type: str, language: DiagramLanguage | None) -> dict[str, str]:
+    headers = {"X-Diagram-Error": error_type}
+    if language == DiagramLanguage.PLANTUML:
+        # Retained for compatibility with existing PlantUML API consumers.
+        headers["X-PlantUML-Error"] = error_type
+    return headers
+
+
+@app.exception_handler(DiagramValidationError)
+async def diagram_validation_error_handler(
+    request: Request,
+    exc: DiagramValidationError,
 ) -> JSONResponse:
-    """Translate structured PlantUML validation failures into a 400 response."""
     logger.warning(
-        "PlantUML validation error for request %s %s",
+        "Diagram validation error for request %s %s",
         request.method,
         request.url.path,
+        extra={"language": exc.language.value if exc.language else None},
     )
     return JSONResponse(
         status_code=400,
         content=exc.result.model_dump(),
-        headers={"X-PlantUML-Error": "validation_failed"},
+        headers=_error_headers("validation_failed", exc.language),
     )
 
 
-@app.exception_handler(PlantUMLInternalError)
-async def plantuml_internal_error_handler(
-    request: Request, exc: PlantUMLInternalError
+@app.exception_handler(RendererInternalError)
+async def renderer_internal_error_handler(
+    request: Request,
+    exc: RendererInternalError,
 ) -> JSONResponse:
-    """Translate unexpected PlantUML or subprocess failures into a 500 response."""
     logger.error(
-        "PlantUML internal error for request %s %s: %s",
+        "Renderer error for request %s %s: %s",
         request.method,
         request.url.path,
         exc.message,
-        extra={"details": exc.details},
+        extra={
+            "details": exc.details,
+            "language": exc.language.value if exc.language else None,
+        },
     )
-    payload = InternalErrorResponse(
-        message=exc.message,
-        details=exc.details if exc.details else None,
-    )
+    payload = InternalErrorResponse(message=exc.public_message)
     return JSONResponse(
         status_code=500,
         content=payload.model_dump(),
-        headers={"X-PlantUML-Error": "internal_error"},
+        headers=_error_headers("internal_error", exc.language),
     )
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
     """Lightweight liveness endpoint used for container and uptime checks."""
-    logger.debug("Health check requested")
     return {"status": "ok"}
+
+
+def _render(body: RenderRequest, output_format: OutputFormat) -> Response:
+    logger.info(
+        "Render requested (language=%s, format=%s, sourceLength=%d)",
+        body.language.value,
+        output_format.value,
+        len(body.source),
+    )
+    rendered = diagram_service.render(
+        body.language,
+        body.source,
+        output_format,
+        body.options,
+    )
+    return Response(content=rendered.content, media_type=rendered.media_type)
 
 
 @app.post(
@@ -88,23 +113,12 @@ async def health() -> dict[str, str]:
     responses={
         200: {"content": {"image/png": {}}},
         400: {"description": "Validation error", "model": ValidationResult},
-        500: {"description": "Internal error", "model": InternalErrorResponse},
+        500: {"description": "Renderer error", "model": InternalErrorResponse},
     },
 )
-async def render_png_endpoint(body: RenderRequest) -> Response:
-    """
-    Render a PlantUML diagram to PNG.
-
-    The request is first structurally validated, then passed through the
-    PlantUML subprocess. On success, raw PNG bytes are returned with the
-    appropriate ``image/png`` content type.
-    """
-    logger.info(
-        "Render PNG requested (sourceLength=%d)",
-        len(body.source),
-    )
-    png_bytes = render_png(body.source)
-    return Response(content=png_bytes, media_type="image/png")
+def render_png_endpoint(body: RenderRequest) -> Response:
+    """Render a PlantUML or Mermaid diagram to PNG."""
+    return _render(body, OutputFormat.PNG)
 
 
 @app.post(
@@ -112,22 +126,12 @@ async def render_png_endpoint(body: RenderRequest) -> Response:
     responses={
         200: {"content": {"image/svg+xml": {}}},
         400: {"description": "Validation error", "model": ValidationResult},
-        500: {"description": "Internal error", "model": InternalErrorResponse},
+        500: {"description": "Renderer error", "model": InternalErrorResponse},
     },
 )
-async def render_svg_endpoint(body: RenderRequest) -> Response:
-    """
-    Render a PlantUML diagram to SVG.
-
-    Returns the SVG document as UTF-8 encoded text with an
-    ``image/svg+xml`` media type.
-    """
-    logger.info(
-        "Render SVG requested (sourceLength=%d)",
-        len(body.source),
-    )
-    svg_text = render_svg(body.source)
-    return Response(content=svg_text, media_type="image/svg+xml; charset=utf-8")
+def render_svg_endpoint(body: RenderRequest) -> Response:
+    """Render a PlantUML or Mermaid diagram to SVG."""
+    return _render(body, OutputFormat.SVG)
 
 
 @app.post(
@@ -135,22 +139,12 @@ async def render_svg_endpoint(body: RenderRequest) -> Response:
     responses={
         200: {"content": {"text/plain": {}}},
         400: {"description": "Validation error", "model": ValidationResult},
-        500: {"description": "Internal error", "model": InternalErrorResponse},
+        500: {"description": "Renderer error", "model": InternalErrorResponse},
     },
-    response_class=PlainTextResponse,
 )
-async def render_ascii_endpoint(body: RenderRequest) -> PlainTextResponse:
-    """
-    Render a PlantUML diagram to an ASCII art representation.
-
-    This is useful for quick inspection in terminals or plain-text logs.
-    """
-    logger.info(
-        "Render ASCII requested (sourceLength=%d)",
-        len(body.source),
-    )
-    ascii_text = render_ascii(body.source)
-    return PlainTextResponse(content=ascii_text)
+def render_ascii_endpoint(body: RenderRequest) -> Response:
+    """Render a PlantUML diagram to ASCII; Mermaid does not support this format."""
+    return _render(body, OutputFormat.ASCII)
 
 
 @app.post(
@@ -159,28 +153,21 @@ async def render_ascii_endpoint(body: RenderRequest) -> PlainTextResponse:
     responses={
         200: {"description": "Diagram is valid"},
         400: {"description": "Diagram is invalid", "model": ValidationResult},
-        500: {"description": "Internal error", "model": InternalErrorResponse},
+        500: {"description": "Renderer error", "model": InternalErrorResponse},
     },
 )
-async def validate_endpoint(body: RenderRequest) -> Any:
-    """
-    Validate a PlantUML diagram without producing an image.
-
-    On success, returns a ``ValidationResult`` with ``ok=True``. For invalid
-    diagrams, a 400 response is returned containing the same model but with
-    detailed issues describing where parsing failed.
-    """
+def validate_endpoint(body: RenderRequest) -> Any:
+    """Validate a PlantUML or Mermaid diagram without returning an image."""
     logger.info(
-        "Validate requested (sourceLength=%d)",
+        "Validate requested (language=%s, sourceLength=%d)",
+        body.language.value,
         len(body.source),
     )
-    result = validate_diagram(body.source)
+    result = diagram_service.validate(body.language, body.source, body.options)
     if result.ok:
         return result
-    # For invalid diagrams, surface as 400 with the same schema.
     return JSONResponse(
         status_code=400,
         content=result.model_dump(),
-        headers={"X-PlantUML-Error": "validation_failed"},
+        headers=_error_headers("validation_failed", body.language),
     )
-

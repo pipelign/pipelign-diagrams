@@ -1,37 +1,65 @@
+x-renderer-environment: &renderer-environment
+  PLANTUML_JAR_PATH: /app/plantuml/plantuml.jar
+  MERMAID_CMD: /opt/mermaid-cli/bin/mmdc
+  MERMAID_PUPPETEER_CONFIG_PATH: /app/mermaid/puppeteer-config.json
+  LOG_LEVEL: DEBUG
+
 services:
-  pipelign-plantuml:
+  pipelign-diagrams:
+    image: pipelign-diagrams:local
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: pipelign-plantuml
+      target: production
+    container_name: pipelign-diagrams
     ports:
       - "8080:8080"
-    environment:
-      PLANTUML_JAR_PATH: /app/plantuml/plantuml.jar
-      LOG_LEVEL: DEBUG
+    environment: *renderer-environment
     restart: unless-stopped
 
-  pipelign-plantuml-dev:
+  pipelign-diagrams-dev:
+    image: pipelign-diagrams:local
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: pipelign-plantuml-dev
+      target: production
+    container_name: pipelign-diagrams-dev
     ports:
       - "8080:8080"
-    environment:
-      PLANTUML_JAR_PATH: /app/plantuml/plantuml.jar
-      LOG_LEVEL: DEBUG
+    environment: *renderer-environment
     volumes:
       - ./app:/app/app
       - ./tests:/app/tests
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
+    command:
+      - uv
+      - run
+      - --no-sync
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --reload
 
-  pipelign-plantuml-tests:
+  pipelign-diagrams-tests:
+    image: pipelign-diagrams-tests:local
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: pipelign-plantuml-tests
-    environment:
-      PLANTUML_JAR_PATH: /app/plantuml/plantuml.jar
-      LOG_LEVEL: DEBUG
-    command: ["python", "-m", "unittest", "discover", "-s", "tests"]
+      target: test
+    container_name: pipelign-diagrams-tests
+    environment: *renderer-environment
+    volumes:
+      - ./tests:/app/tests
+    command:
+      - uv
+      - run
+      - --no-sync
+      - python
+      - -m
+      - unittest
+      - discover
+      - -s
+      - tests
+      - -v

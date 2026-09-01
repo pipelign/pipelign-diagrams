@@ -1,6 +1,7 @@
 import unittest
 
 from app.models import (
+    DiagramLanguage,
     InternalErrorResponse,
     RenderRequest,
     ValidationIssue,
@@ -12,6 +13,7 @@ class TestRenderRequest(unittest.TestCase):
     def test_minimal_request(self) -> None:
         req = RenderRequest(source="@startuml\n@enduml")
         self.assertEqual(req.source, "@startuml\n@enduml")
+        self.assertEqual(req.language, DiagramLanguage.PLANTUML)
         self.assertIsNone(req.options)
 
     def test_request_with_options(self) -> None:
@@ -20,6 +22,10 @@ class TestRenderRequest(unittest.TestCase):
             options={"theme": "sketch"},
         )
         self.assertEqual(req.options, {"theme": "sketch"})
+
+    def test_request_with_mermaid_language(self) -> None:
+        req = RenderRequest(source="flowchart LR\nA --> B", language="mermaid")
+        self.assertEqual(req.language, DiagramLanguage.MERMAID)
 
 
 class TestValidationModels(unittest.TestCase):
@@ -59,4 +65,3 @@ class TestInternalErrorResponse(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -42,6 +42,23 @@ class PlantUMLIntegrationTests(unittest.TestCase):
         self.assertGreater(len(svg_text.strip()), 0)
         self.assertIn("<svg", svg_text)
 
+    def test_render_graphviz_dependent_diagram(self) -> None:
+        source = """@startuml
+left to right direction
+component "API Gateway" as API
+database "Orders" as DB
+queue "Domain Events" as Events
+API --> DB
+API --> Events
+@enduml"""
+
+        svg_text = render_svg(source, config=self.config)
+
+        self.assertIn("<svg", svg_text)
+        self.assertIn("API Gateway", svg_text)
+        self.assertNotIn("Dot executable", svg_text)
+        self.assertNotIn("Cannot find Graphviz", svg_text)
+
     def test_render_ascii_integration(self) -> None:
         ascii_text = render_ascii(self.source, config=self.config)
         self.assertIsInstance(ascii_text, str)
@@ -55,4 +72,3 @@ class PlantUMLIntegrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

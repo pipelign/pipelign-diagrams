@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>pipelign-diagrams playground</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --background: #f4f5f7;
+        --surface: #ffffff;
+        --border: #d8dce3;
+        --text: #172033;
+        --muted: #667085;
+        --accent: #3157d5;
+        --accent-hover: #2446bb;
+        --success: #147a50;
+        --danger: #b42318;
+        --code: #101828;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--text);
+        background: var(--background);
+      }
+
+      header,
+      main {
+        width: min(1180px, calc(100% - 32px));
+        margin-inline: auto;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 28px 0 18px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 5px;
+        font-size: clamp(1.4rem, 3vw, 2rem);
+        letter-spacing: -0.035em;
+      }
+
+      h2 {
+        margin-bottom: 0;
+        font-size: 1rem;
+      }
+
+      .subtitle,
+      .hint {
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        flex: none;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .status::before {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #98a2b3;
+        content: "";
+      }
+
+      .status.ready::before {
+        background: var(--success);
+      }
+
+      .status.error::before {
+        background: var(--danger);
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(360px, 0.9fr);
+        gap: 18px;
+        padding-bottom: 32px;
+      }
+
+      .panel {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        box-shadow: 0 1px 2px rgb(16 24 40 / 4%);
+      }
+
+      .panel-header,
+      .panel-body {
+        padding: 16px;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .field-row,
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        gap: 10px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 0.8rem;
+        font-weight: 650;
+      }
+
+      select,
+      button,
+      .download {
+        min-height: 38px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        font-size: 0.88rem;
+      }
+
+      select {
+        min-width: 145px;
+        padding: 0 34px 0 11px;
+      }
+
+      button,
+      .download {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 13px;
+        cursor: pointer;
+        font-weight: 650;
+        text-decoration: none;
+      }
+
+      button:hover:not(:disabled),
+      .download:hover {
+        border-color: #aab1bd;
+        background: #f8f9fb;
+      }
+
+      button.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #ffffff;
+      }
+
+      button.primary:hover:not(:disabled) {
+        border-color: var(--accent-hover);
+        background: var(--accent-hover);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 455px;
+        margin: 15px 0 12px;
+        resize: vertical;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        outline: none;
+        padding: 14px;
+        background: #fbfcfd;
+        color: var(--code);
+        font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", monospace;
+        tab-size: 2;
+      }
+
+      textarea:focus,
+      select:focus-visible,
+      button:focus-visible,
+      .download:focus-visible {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgb(49 87 213 / 14%);
+      }
+
+      .preview {
+        display: grid;
+        min-height: 527px;
+        place-items: center;
+        overflow: auto;
+        padding: 22px;
+        background-image: linear-gradient(45deg, #f5f6f8 25%, transparent 25%),
+          linear-gradient(-45deg, #f5f6f8 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, #f5f6f8 75%),
+          linear-gradient(-45deg, transparent 75%, #f5f6f8 75%);
+        background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+        background-size: 16px 16px;
+      }
+
+      .preview img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        padding: 12px;
+        border-radius: 6px;
+        background: #ffffff;
+        box-shadow: 0 2px 10px rgb(16 24 40 / 10%);
+      }
+
+      .preview pre {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+        overflow: auto;
+        white-space: pre-wrap;
+        color: var(--code);
+        font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", monospace;
+      }
+
+      .placeholder {
+        max-width: 300px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .result-message {
+        font-size: 0.84rem;
+        font-weight: 650;
+      }
+
+      .result-message.success {
+        color: var(--success);
+      }
+
+      .result-message.error {
+        color: var(--danger);
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      @media (max-width: 860px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        textarea,
+        .preview {
+          min-height: 390px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>pipelign-diagrams playground</h1>
+        <p class="subtitle">Send PlantUML or Mermaid source through the rendering API.</p>
+      </div>
+      <div id="api-status" class="status" role="status">Checking API…</div>
+    </header>
+
+    <main>
+      <section class="panel" aria-labelledby="source-heading">
+        <div class="panel-header">
+          <h2 id="source-heading">Diagram source</h2>
+          <div class="field-row">
+            <label>
+              Language
+              <select id="language">
+                <option value="plantuml">PlantUML</option>
+                <option value="mermaid">Mermaid</option>
+              </select>
+            </label>
+            <button id="load-sample" type="button">Load sample</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <textarea id="source" spellcheck="false" aria-label="Diagram source"></textarea>
+          <div class="actions">
+            <button class="primary action" data-format="svg" type="button">Render SVG</button>
+            <button class="action" data-format="png" type="button">Render PNG</button>
+            <button id="ascii-button" class="action" data-format="ascii" type="button">Render ASCII</button>
+            <button id="validate-button" class="action" type="button">Validate</button>
+          </div>
+          <p class="hint" style="margin-top: 11px">Tip: press Ctrl/⌘ + Enter to render SVG.</p>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="result-heading">
+        <div class="panel-header">
+          <h2 id="result-heading">Result</h2>
+          <div class="field-row">
+            <span id="result-message" class="result-message" role="status">Ready</span>
+            <a id="download" class="download" href="#" hidden>Download</a>
+          </div>
+        </div>
+        <div id="preview" class="preview">
+          <p class="placeholder">Choose a format to render the sample diagram, or validate it without rendering.</p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const samples = {
+        plantuml: "@startuml\nAlice -> Bob: Hello\nBob --> Alice: Hi!\n@enduml",
+        mermaid: "flowchart LR\n  Browser --> API\n  API --> Renderer\n  Renderer --> Browser",
+      };
+
+      const language = document.querySelector("#language");
+      const source = document.querySelector("#source");
+      const preview = document.querySelector("#preview");
+      const apiStatus = document.querySelector("#api-status");
+      const resultMessage = document.querySelector("#result-message");
+      const download = document.querySelector("#download");
+      const asciiButton = document.querySelector("#ascii-button");
+      const actionButtons = [...document.querySelectorAll(".action")];
+      let objectUrl = null;
+
+      function loadSample() {
+        source.value = samples[language.value];
+        source.focus();
+      }
+
+      function syncFormats() {
+        asciiButton.disabled = language.value === "mermaid";
+        asciiButton.title = asciiButton.disabled ? "Mermaid does not support ASCII output" : "";
+      }
+
+      function clearPreview() {
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+        }
+        preview.replaceChildren();
+        download.hidden = true;
+        download.removeAttribute("href");
+      }
+
+      function showText(value) {
+        clearPreview();
+        const output = document.createElement("pre");
+        output.textContent = value;
+        preview.append(output);
+      }
+
+      function setResult(message, kind = "") {
+        resultMessage.textContent = message;
+        resultMessage.className = `result-message ${kind}`.trim();
+      }
+
+      function setBusy(busy) {
+        actionButtons.forEach((button) => {
+          button.disabled = busy;
+        });
+        if (!busy) syncFormats();
+      }
+
+      async function readError(response) {
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          return JSON.stringify(await response.json(), null, 2);
+        }
+        return (await response.text()) || `HTTP ${response.status}`;
+      }
+
+      async function validate() {
+        setBusy(true);
+        setResult("Validating…");
+        try {
+          const response = await fetch("/validate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ language: language.value, source: source.value }),
+          });
+          const payload = await response.json();
+          showText(JSON.stringify(payload, null, 2));
+          if (response.ok && payload.ok) {
+            setResult("Diagram is valid", "success");
+          } else if (response.status === 400 && payload.ok === false) {
+            setResult("Diagram is invalid", "error");
+          } else {
+            setResult(`Validation failed (HTTP ${response.status})`, "error");
+          }
+        } catch (error) {
+          showText(String(error));
+          setResult("Request failed", "error");
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function render(format) {
+        setBusy(true);
+        setResult(`Rendering ${format.toUpperCase()}…`);
+        try {
+          const response = await fetch(`/render/${format}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ language: language.value, source: source.value }),
+          });
+          if (!response.ok) {
+            showText(await readError(response));
+            setResult(`Render failed (HTTP ${response.status})`, "error");
+            return;
+          }
+
+          if (format === "ascii") {
+            showText(await response.text());
+          } else {
+            clearPreview();
+            const blob = await response.blob();
+            objectUrl = URL.createObjectURL(blob);
+            const image = document.createElement("img");
+            image.src = objectUrl;
+            image.alt = `Rendered ${language.value} diagram`;
+            preview.append(image);
+            download.href = objectUrl;
+            download.download = `diagram.${format}`;
+            download.hidden = false;
+          }
+          setResult(`${format.toUpperCase()} rendered`, "success");
+        } catch (error) {
+          showText(String(error));
+          setResult("Request failed", "error");
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      document.querySelector("#load-sample").addEventListener("click", loadSample);
+      document.querySelector("#validate-button").addEventListener("click", validate);
+      document.querySelectorAll("[data-format]").forEach((button) => {
+        button.addEventListener("click", () => render(button.dataset.format));
+      });
+      language.addEventListener("change", () => {
+        syncFormats();
+        loadSample();
+      });
+      source.addEventListener("keydown", (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+          event.preventDefault();
+          render("svg");
+        }
+      });
+
+      loadSample();
+      syncFormats();
+      fetch("/health")
+        .then((response) => {
+          if (!response.ok) throw new Error("Health check failed");
+          apiStatus.textContent = "API ready";
+          apiStatus.className = "status ready";
+        })
+        .catch(() => {
+          apiStatus.textContent = "API unavailable";
+          apiStatus.className = "status error";
+        });
+    </script>
+  </body>
+</html>

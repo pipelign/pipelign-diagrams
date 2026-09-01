@@ -17,32 +17,40 @@ This module is responsible for:
 import logging
 import os
 import subprocess
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import Any
 
+from .errors import DiagramValidationError, RendererInternalError
 from .logging_config import configure_logging
-from .models import ValidationIssue, ValidationResult
-
+from .models import DiagramLanguage, OutputFormat, ValidationIssue, ValidationResult
+from .renderer import DiagramRenderer, RenderedDiagram
 
 configure_logging()
 logger = logging.getLogger(__name__)
 
 
-class PlantUMLValidationError(Exception):
+class PlantUMLValidationError(DiagramValidationError):
     """Raised when PlantUML reports a validation error for the given source."""
 
-    def __init__(self, result: ValidationResult):
-        self.result = result
-        super().__init__("PlantUML validation failed")
+    def __init__(self, result: ValidationResult) -> None:
+        super().__init__(result, language=DiagramLanguage.PLANTUML)
 
 
-class PlantUMLInternalError(Exception):
+class PlantUMLInternalError(RendererInternalError):
     """Raised when PlantUML fails for internal or unexpected reasons."""
 
-    def __init__(self, message: str, details: Optional[dict] = None):
-        self.message = message
-        self.details = details or {}
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            language=DiagramLanguage.PLANTUML,
+            details=details,
+            public_message="The PlantUML renderer could not process the diagram.",
+        )
 
 
 @dataclass
@@ -53,7 +61,7 @@ class PlantUMLConfig:
     timeout_seconds: float
 
     @classmethod
-    def from_env(cls) -> "PlantUMLConfig":
+    def from_env(cls) -> PlantUMLConfig:
         """
         Build a ``PlantUMLConfig`` from environment variables.
 
@@ -115,7 +123,7 @@ def _ensure_basic_uml_structure(source: str) -> None:
     raise PlantUMLValidationError(result)
 
 
-def _build_base_command(config: PlantUMLConfig) -> List[str]:
+def _build_base_command(config: PlantUMLConfig) -> list[str]:
     """Return the base ``java`` command used for all PlantUML invocations."""
     java_cmd = os.getenv("JAVA_CMD", "java")
     return [
@@ -131,7 +139,7 @@ def _run_plantuml(
     source: str,
     *,
     capture_binary: bool,
-    config: Optional[PlantUMLConfig] = None,
+    config: PlantUMLConfig | None = None,
 ) -> subprocess.CompletedProcess:
     """
     Invoke the PlantUML subprocess with the given arguments and source.
@@ -156,7 +164,11 @@ def _run_plantuml(
 
     # Log the exact source being sent, truncated to avoid overly large log entries.
     max_preview = 5000
-    preview = source if len(source) <= max_preview else source[:max_preview] + "... [truncated]"
+    preview = (
+        source
+        if len(source) <= max_preview
+        else source[:max_preview] + "... [truncated]"
+    )
     logger.debug("PlantUML source (%d chars):\n%s", len(source), preview)
 
     logger.info(
@@ -218,7 +230,7 @@ def _parse_validation_output(stderr_text: str) -> ValidationResult:
     """
 
     lines = [line.strip() for line in stderr_text.splitlines() if line.strip()]
-    errors: List[ValidationIssue] = []
+    errors: list[ValidationIssue] = []
 
     i = 0
     while i < len(lines):
@@ -297,7 +309,7 @@ def _classify_and_raise_on_failure(
     )
 
 
-def render_png(source: str, *, config: Optional[PlantUMLConfig] = None) -> bytes:
+def render_png(source: str, *, config: PlantUMLConfig | None = None) -> bytes:
     """
     Render the given PlantUML diagram to PNG bytes.
 
@@ -318,7 +330,7 @@ def render_png(source: str, *, config: Optional[PlantUMLConfig] = None) -> bytes
     return completed.stdout  # type: ignore[return-value]
 
 
-def render_svg(source: str, *, config: Optional[PlantUMLConfig] = None) -> str:
+def render_svg(source: str, *, config: PlantUMLConfig | None = None) -> str:
     """
     Render the given PlantUML diagram to an SVG XML string.
 
@@ -337,7 +349,7 @@ def render_svg(source: str, *, config: Optional[PlantUMLConfig] = None) -> str:
     return completed.stdout
 
 
-def render_ascii(source: str, *, config: Optional[PlantUMLConfig] = None) -> str:
+def render_ascii(source: str, *, config: PlantUMLConfig | None = None) -> str:
     """
     Render the given PlantUML diagram to an ASCII art representation.
 
@@ -357,7 +369,7 @@ def render_ascii(source: str, *, config: Optional[PlantUMLConfig] = None) -> str
 
 
 def validate_diagram(
-    source: str, *, config: Optional[PlantUMLConfig] = None
+    source: str, *, config: PlantUMLConfig | None = None
 ) -> ValidationResult:
     """
     Validate the given PlantUML diagram using PlantUML's syntax checker.
@@ -398,3 +410,40 @@ def validate_diagram(
         )
     return result
 
+
+class PlantUMLRenderer(DiagramRenderer):
+    """Generic renderer adapter for the existing PlantUML integration."""
+
+    language = DiagramLanguage.PLANTUML
+    supported_formats = frozenset(
+        {OutputFormat.PNG, OutputFormat.SVG, OutputFormat.ASCII}
+    )
+
+    def render(
+        self,
+        source: str,
+        output_format: OutputFormat,
+        options: Mapping[str, Any] | None = None,
+    ) -> RenderedDiagram:
+        del options  # Reserved by the public API for future renderer options.
+        if output_format == OutputFormat.PNG:
+            return RenderedDiagram(render_png(source), "image/png")
+        if output_format == OutputFormat.SVG:
+            return RenderedDiagram(
+                render_svg(source).encode("utf-8"),
+                "image/svg+xml; charset=utf-8",
+            )
+        if output_format == OutputFormat.ASCII:
+            return RenderedDiagram(
+                render_ascii(source).encode("utf-8"),
+                "text/plain; charset=utf-8",
+            )
+        raise ValueError(f"Unsupported PlantUML output format: {output_format.value}")
+
+    def validate(
+        self,
+        source: str,
+        options: Mapping[str, Any] | None = None,
+    ) -> ValidationResult:
+        del options
+        return validate_diagram(source)

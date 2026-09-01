@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pipelign-diagrams"
+version = "2.0.0"
+description = "A server-side PlantUML and Mermaid diagram rendering service"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]
+authors = [
+    { name = "Pipelign Software, Inc." },
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0,<0.116.0",
+    "pydantic>=2.6.0,<3.0.0",
+    "uvicorn[standard]>=0.27.0,<0.28.0",
+]
+
+[project.scripts]
+pipelign-diagrams = "app.__main__:main"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27.0,<0.28.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/app",
+    "/tests",
+    "/README.md",
+    "/LICENSE",
+    "/NOTICE",
+    "/THIRD_PARTY_NOTICES.md",
+]

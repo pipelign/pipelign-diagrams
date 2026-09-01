@@ -30,4 +30,3 @@ def configure_logging() -> int:
         root_logger.addHandler(handler)
 
     return level
-

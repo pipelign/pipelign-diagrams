@@ -1,4 +1,3 @@
-"""
-FastAPI application package for the PlantUML rendering microservice.
-"""
+"""pipelign-diagrams FastAPI application package."""
 
+__version__ = "2.0.0"

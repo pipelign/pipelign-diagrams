@@ -2,6 +2,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
+from app.models import ValidationResult
 from app.plantuml_service import (
     PlantUMLConfig,
     PlantUMLInternalError,
@@ -11,7 +12,6 @@ from app.plantuml_service import (
     render_svg,
     validate_diagram,
 )
-from app.models import ValidationResult
 
 
 class TestPlantUMLConfig(unittest.TestCase):
@@ -97,7 +97,7 @@ class TestValidateDiagram(unittest.TestCase):
         )
         mock_run.return_value = completed
 
-        result = validate_diagram("@startuml\n@enduml")
+        result = validate_diagram("@startuml\nAlice -> Bob: Hi\n@enduml")
 
         mock_exists.assert_called_once()
         mock_run.assert_called_once()
@@ -134,4 +134,3 @@ class TestValidateDiagram(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
