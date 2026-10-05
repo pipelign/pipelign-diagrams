@@ -2,10 +2,23 @@ x-renderer-environment: &renderer-environment
   PLANTUML_JAR_PATH: /app/plantuml/plantuml.jar
   MERMAID_CMD: /opt/mermaid-cli/bin/mmdc
   MERMAID_PUPPETEER_CONFIG_PATH: /app/mermaid/puppeteer-config.json
-  LOG_LEVEL: DEBUG
+  LOG_LEVEL: INFO
+  DIAGRAM_API_TOKEN: ${DIAGRAM_API_TOKEN:-}
+  DIAGRAM_API_TOKEN_PREVIOUS: ${DIAGRAM_API_TOKEN_PREVIOUS:-}
+
+x-renderer-isolation: &renderer-isolation
+  init: true
+  read_only: true
+  cpus: 1
+  mem_limit: 2g
+  pids_limit: 256
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=128m,mode=1777"]
 
 services:
   pipelign-diagrams:
+    <<: *renderer-isolation
     image: pipelign-diagrams:local
     build:
       context: .
@@ -13,11 +26,12 @@ services:
       target: production
     container_name: pipelign-diagrams
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment: *renderer-environment
     restart: unless-stopped
 
   pipelign-diagrams-dev:
+    <<: *renderer-isolation
     image: pipelign-diagrams:local
     build:
       context: .
@@ -25,15 +39,12 @@ services:
       target: production
     container_name: pipelign-diagrams-dev
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment: *renderer-environment
     volumes:
-      - ./app:/app/app
-      - ./tests:/app/tests
+      - ./app:/app/app:ro
+      - ./tests:/app/tests:ro
     command:
-      - uv
-      - run
-      - --no-sync
       - uvicorn
       - app.main:app
       - --host
@@ -43,6 +54,7 @@ services:
       - --reload
 
   pipelign-diagrams-tests:
+    <<: *renderer-isolation
     image: pipelign-diagrams-tests:local
     build:
       context: .
@@ -51,11 +63,8 @@ services:
     container_name: pipelign-diagrams-tests
     environment: *renderer-environment
     volumes:
-      - ./tests:/app/tests
+      - ./tests:/app/tests:ro
     command:
-      - uv
-      - run
-      - --no-sync
       - python
       - -m
       - unittest

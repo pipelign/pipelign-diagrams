@@ -17,12 +17,21 @@ and headless Chromium. The service selects a backend from the request's
 
 The Docker default base URL is `http://localhost:8080`.
 
-- `GET /` opens a small browser playground for rendering and validation.
-- `GET /health` returns `{"status":"ok"}`.
+- `GET /` retains the legacy playground asset; see browser limitations below.
+- `GET /health` returns `{"status":"ok"}` (public liveness only).
+- `GET /ready` authenticates, exercises both engines once per process, and returns build metadata.
 - `POST /render/svg` returns SVG as `image/svg+xml`.
 - `POST /render/png` returns PNG bytes as `image/png`.
 - `POST /render/ascii` returns PlantUML ASCII output as `text/plain`.
 - `POST /validate` validates source without returning rendered output.
+
+All endpoints except `/health` require `Authorization: Bearer <service token>`.
+Set `DIAGRAM_API_TOKEN` to at least 32 non-whitespace ASCII characters. Missing
+configuration fails closed with 503; missing/wrong credentials return 401.
+Keep the token in secret injection or an ignored `.env`, never in source control.
+For rotation, deploy the new token as current and the old one as
+`DIAGRAM_API_TOKEN_PREVIOUS`, update callers, then remove the previous token.
+Private ingress and HTTPS are still required outside loopback development.
 
 All POST endpoints accept the same body:
 
@@ -36,12 +45,13 @@ All POST endpoints accept the same body:
 
 `language` accepts `plantuml` or `mermaid`. It defaults to `plantuml`, so existing
 PlantUML requests that only send `source` remain compatible. `options` is reserved
-for future renderer-specific settings.
+for future renderer-specific settings; only null or an empty object is accepted.
 
 Render a Mermaid diagram to SVG:
 
 ```bash
 curl --fail-with-body \
+  --header "Authorization: Bearer ${DIAGRAM_API_TOKEN}" \
   --header 'Content-Type: application/json' \
   --data '{"language":"mermaid","source":"flowchart LR\n  A --> B"}' \
   http://localhost:8080/render/svg \
@@ -52,6 +62,7 @@ Render a PlantUML diagram to PNG using the backward-compatible default language:
 
 ```bash
 curl --fail-with-body \
+  --header "Authorization: Bearer ${DIAGRAM_API_TOKEN}" \
   --header 'Content-Type: application/json' \
   --data '{"source":"@startuml\nAlice -> Bob: Hi\n@enduml"}' \
   http://localhost:8080/render/png \
@@ -74,22 +85,53 @@ An unsupported language value is rejected as request validation with HTTP 422.
 An unsupported language/format combination, such as Mermaid ASCII, returns HTTP
 400 with the same validation schema. Unexpected renderer failures return HTTP 500
 with a stable `InternalErrorResponse`; subprocess commands, paths, stack traces,
-and raw renderer output are kept out of the response and written only to server
-logs where useful.
+and raw renderer output are kept out of responses and logs at every log level.
+Policy/size errors use 400/413/422, engine deadlines use 504, and overload uses
+503 with `Retry-After: 1`. There is one render slot and no pending render queue.
+Syntax diagnostics contain static messages and engine-derived, one-based lines;
+a parser may identify end-of-input immediately after the final source line.
 
 Responses include `X-Diagram-Error` for service-level failures. PlantUML failures
 also retain the existing `X-PlantUML-Error` header for compatibility.
 
-Interactive OpenAPI documentation is available at `/docs` while the service is
-running.
+The authenticated OpenAPI schema remains at `/openapi.json`. Response headers
+bind successful bytes to the input hash, language and build-manifest hash.
 
-### Browser playground
+### Browser limitations
 
-Open `http://localhost:8080/` after starting the service. The playground lets you
-switch between PlantUML and Mermaid, load a sample, validate the source, render
-SVG or PNG, preview the result, and download it. PlantUML ASCII rendering is also
-available. The page is served by the application and has no additional runtime
-or frontend build dependencies.
+This version is a machine service. The retained legacy playground and Swagger
+assets are behind bearer authentication and restrictive CSP; they are not a
+supported direct-browser workflow. Do not distribute the service token to a
+browser. Consumers must validate SVG and authorize delivery to their users.
+Renderer bytes are not a sanitized publication artifact.
+
+### Restricted rendering profile
+
+Requests are capped at 768 KiB before JSON parsing; source at 128 KiB UTF-8;
+engine stdout/output files at 4 MiB; diagnostics at 16 KiB. Each engine has a
+20-second wall deadline. Includes, links, external images and configuration
+overrides are unsupported. No bundled include libraries are approved yet.
+PlantUML uses SANDBOX and a 512 MiB Java heap. Mermaid uses strict mode, SVG text
+labels and locked security settings. Chromium runs with its namespace sandbox.
+
+Each render starts in private Linux user, PID, mount and network namespaces. Only
+loopback is enabled for Puppeteer/Chromium; outbound network routes do not exist.
+Namespace capabilities are dropped before execution. The API environment and
+processes are not visible through the engine's `/proc`. Engines inherit only an
+allowlisted environment without the bearer secret. Killing the namespace init
+also kills detached descendants; temporary directories are removed on failure.
+The HTTP process retains its ingress network. It has no rendering egress path.
+
+Use the provided non-root Compose limits: 1 CPU, 2 GiB memory, 256 PIDs, read-only
+root, 128 MiB temporary filesystem, no capabilities and no new privileges. Linux
+must permit unprivileged user namespaces and Chromium sandboxing. `/ready` fails
+closed if unavailable; never add privileged mode or disable sandboxing to work
+around this. Verify these prerequisites on the target Azure Container Apps
+runtime before deployment; local Docker success is not Azure verification.
+
+The build manifest records actual engine/font versions and hashes, fixed options,
+policy version and source hash. Deploy by immutable registry digest and retain
+that digest separately; the manifest is integrity metadata, not remote attestation.
 
 ## Architecture
 
@@ -158,7 +200,9 @@ needed. Run the test suite with:
 uv run python -m unittest discover -s tests -v
 ```
 
-Local integration tests require the external renderers:
+Production rendering requires the built Linux image and its generated manifest.
+Host unit tests can run without engines; direct host rendering is unsupported.
+The integration tests require:
 
 - Java, Graphviz, and a PlantUML JAR selected by `PLANTUML_JAR_PATH`.
 - `mmdc` and a compatible Chromium installation. Set `MERMAID_CMD` and, when
@@ -172,6 +216,8 @@ installed and configured.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `DIAGRAM_API_TOKEN` | empty (fails closed) | Current service bearer credential. |
+| `DIAGRAM_API_TOKEN_PREVIOUS` | empty | Optional overlapping rotation credential. |
 | `HOST` | `0.0.0.0` | API bind host used by the installed command. |
 | `PORT` | `8080` | API bind port used by the installed command. |
 | `LOG_LEVEL` | `INFO` | Python root logging level. |
@@ -182,7 +228,9 @@ installed and configured.
 | `MERMAID_TIMEOUT_SECONDS` | `20` | Mermaid subprocess timeout. |
 | `MERMAID_PUPPETEER_CONFIG_PATH` | container config when present | Optional Puppeteer launch configuration. |
 
-Invalid timeout values fall back to 20 seconds.
+Non-numeric timeout values fall back to 20 seconds; the process runner caps
+execution at 20 seconds. Runtime engine-path/config overrides are development
+only: released deployments must use the image defaults recorded in the manifest.
 
 ## Repository layout
 

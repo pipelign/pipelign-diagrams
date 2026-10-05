@@ -1,4 +1,4 @@
 {
   "executablePath": "/usr/bin/chromium",
-  "args": ["--no-sandbox", "--disable-dev-shm-usage"]
+  "args": ["--disable-dev-shm-usage", "--disable-setuid-sandbox"]
 }

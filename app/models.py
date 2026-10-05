@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DiagramLanguage(str, Enum):
@@ -24,9 +24,11 @@ class OutputFormat(str, Enum):
 class RenderRequest(BaseModel):
     """Request body for all render and validate endpoints."""
 
-    source: str
+    model_config = ConfigDict(extra="forbid")
+
+    source: str = Field(repr=False)
     language: DiagramLanguage = DiagramLanguage.PLANTUML
-    options: dict[str, Any] | None = None
+    options: dict[str, Any] | None = Field(default=None, repr=False)
 
 
 class ValidationIssue(BaseModel):

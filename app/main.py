@@ -1,17 +1,21 @@
-from __future__ import annotations
-
 """FastAPI application for language-agnostic diagram rendering."""
 
+from __future__ import annotations
+
 import logging
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 
 from .diagram_service import diagram_service
 from .errors import DiagramValidationError, RendererInternalError
+from .limits import MAX_OUTPUT_BYTES, RenderPolicyError
 from .logging_config import configure_logging
+from .manifest import get_manifest
 from .models import (
     DiagramLanguage,
     InternalErrorResponse,
@@ -19,6 +23,7 @@ from .models import (
     RenderRequest,
     ValidationResult,
 )
+from .security import RendererGate, render_slot
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -26,9 +31,60 @@ UI_PATH = Path(__file__).with_name("static") / "index.html"
 
 app = FastAPI(
     title="pipelign-diagrams",
-    version="2.0.0",
+    version="2.1.0",
     description="Render and validate PlantUML and Mermaid diagrams.",
 )
+app.add_middleware(RendererGate)
+_engines_ready = False
+
+
+@app.get("/ready")
+def ready():
+    global _engines_ready
+    manifest = get_manifest()
+    if not _engines_ready:
+        with render_slot():
+            for language, source in (
+                (DiagramLanguage.MERMAID, "flowchart LR\nReady --> Engine"),
+                (
+                    DiagramLanguage.PLANTUML,
+                    "@startuml\nReady -> Engine: ready\n@enduml",
+                ),
+            ):
+                try:
+                    diagram_service.render(language, source, OutputFormat.SVG)
+                except (RendererInternalError, DiagramValidationError):
+                    raise RenderPolicyError(
+                        "engine_unavailable", "Rendering engine readiness failed.", 503
+                    ) from None
+            _engines_ready = True
+    return {"ready": True, "manifest": manifest}
+
+
+@app.exception_handler(RenderPolicyError)
+async def policy_error_handler(request, exc):
+    headers = {"X-Diagram-Error": exc.code}
+    if exc.code == "overloaded":
+        headers["Retry-After"] = "1"
+    return JSONResponse(
+        {"ok": False, "errorType": exc.code, "message": exc.message, "details": None},
+        status_code=exc.status,
+        headers=headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(request, exc):
+    # FastAPI's default response includes the submitted source in "input".
+    return JSONResponse(
+        {
+            "ok": False,
+            "errorType": "invalid_request",
+            "message": "Invalid render request schema.",
+            "details": None,
+        },
+        status_code=422,
+    )
 
 
 @app.get("/", include_in_schema=False)
@@ -69,12 +125,10 @@ async def renderer_internal_error_handler(
     exc: RendererInternalError,
 ) -> JSONResponse:
     logger.error(
-        "Renderer error for request %s %s: %s",
+        "Renderer error for request %s %s",
         request.method,
         request.url.path,
-        exc.message,
         extra={
-            "details": exc.details,
             "language": exc.language.value if exc.language else None,
         },
     )
@@ -93,19 +147,31 @@ async def health() -> dict[str, str]:
 
 
 def _render(body: RenderRequest, output_format: OutputFormat) -> Response:
+    manifest = get_manifest()
     logger.info(
         "Render requested (language=%s, format=%s, sourceLength=%d)",
         body.language.value,
         output_format.value,
         len(body.source),
     )
-    rendered = diagram_service.render(
-        body.language,
-        body.source,
-        output_format,
-        body.options,
+    with render_slot():
+        rendered = diagram_service.render(
+            body.language, body.source, output_format, body.options
+        )
+    if len(rendered.content) > MAX_OUTPUT_BYTES:
+        raise RenderPolicyError(
+            "resource_limit", "Rendering exceeded the output limit.", 413
+        )
+    return Response(
+        content=rendered.content,
+        media_type=rendered.media_type,
+        headers={
+            "X-Diagram-Language": body.language.value,
+            "X-Renderer-Manifest": manifest["manifest_sha256"],
+            "X-Diagram-Input-Sha256": sha256(body.source.encode("utf-8")).hexdigest(),
+            "X-Diagram-Output-Sha256": sha256(rendered.content).hexdigest(),
+        },
     )
-    return Response(content=rendered.content, media_type=rendered.media_type)
 
 
 @app.post(
@@ -163,7 +229,8 @@ def validate_endpoint(body: RenderRequest) -> Any:
         body.language.value,
         len(body.source),
     )
-    result = diagram_service.validate(body.language, body.source, body.options)
+    with render_slot():
+        result = diagram_service.validate(body.language, body.source, body.options)
     if result.ok:
         return result
     return JSONResponse(

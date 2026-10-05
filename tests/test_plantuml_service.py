@@ -25,7 +25,7 @@ class TestRenderFunctions(unittest.TestCase):
     sample_source = "@startuml\nAlice -> Bob: Hi\n@enduml"
 
     @patch("app.plantuml_service.os.path.exists", return_value=True)
-    @patch("app.plantuml_service.subprocess.run")
+    @patch("app.plantuml_service.run_engine")
     def test_render_svg_success(
         self,
         mock_run: unittest.mock.MagicMock,
@@ -34,8 +34,8 @@ class TestRenderFunctions(unittest.TestCase):
         completed = subprocess.CompletedProcess(
             args=["java"],
             returncode=0,
-            stdout="<svg></svg>",
-            stderr="",
+            stdout=b"<svg></svg>",
+            stderr=b"",
         )
         mock_run.return_value = completed
 
@@ -45,7 +45,7 @@ class TestRenderFunctions(unittest.TestCase):
         mock_run.assert_called_once()
 
     @patch("app.plantuml_service.os.path.exists", return_value=True)
-    @patch("app.plantuml_service.subprocess.run")
+    @patch("app.plantuml_service.run_engine")
     def test_render_png_validation_error_raises(
         self,
         mock_run: unittest.mock.MagicMock,
@@ -56,7 +56,7 @@ class TestRenderFunctions(unittest.TestCase):
             args=["java"],
             returncode=1,
             stdout=b"",
-            stderr=stderr_text,
+            stderr=stderr_text.encode(),
         )
         mock_run.return_value = completed
 
@@ -83,7 +83,7 @@ class TestRenderFunctions(unittest.TestCase):
 
 class TestValidateDiagram(unittest.TestCase):
     @patch("app.plantuml_service.os.path.exists", return_value=True)
-    @patch("app.plantuml_service.subprocess.run")
+    @patch("app.plantuml_service.run_engine")
     def test_validate_diagram_ok(
         self,
         mock_run: unittest.mock.MagicMock,
@@ -92,8 +92,8 @@ class TestValidateDiagram(unittest.TestCase):
         completed = subprocess.CompletedProcess(
             args=["java"],
             returncode=0,
-            stdout="",
-            stderr="",
+            stdout=b"",
+            stderr=b"",
         )
         mock_run.return_value = completed
 
@@ -106,7 +106,7 @@ class TestValidateDiagram(unittest.TestCase):
         self.assertEqual(result.errors, [])
 
     @patch("app.plantuml_service.os.path.exists", return_value=True)
-    @patch("app.plantuml_service.subprocess.run")
+    @patch("app.plantuml_service.run_engine")
     def test_validate_diagram_invalid_returns_result(
         self,
         mock_run: unittest.mock.MagicMock,
@@ -116,8 +116,8 @@ class TestValidateDiagram(unittest.TestCase):
         completed = subprocess.CompletedProcess(
             args=["java"],
             returncode=1,
-            stdout="",
-            stderr=stderr_text,
+            stdout=b"",
+            stderr=stderr_text.encode(),
         )
         mock_run.return_value = completed
 
@@ -128,8 +128,8 @@ class TestValidateDiagram(unittest.TestCase):
         self.assertIsInstance(result, ValidationResult)
         self.assertFalse(result.ok)
         self.assertEqual(len(result.errors), 1)
-        self.assertEqual(result.errors[0].line, 10)
-        self.assertEqual(result.errors[0].message, "Syntax Error?")
+        self.assertEqual(result.errors[0].line, 11)
+        self.assertEqual(result.errors[0].message, "PlantUML syntax error.")
 
 
 if __name__ == "__main__":

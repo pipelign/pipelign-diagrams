@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Language-agnostic renderer registry and dispatch service."""
+
+from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -15,6 +15,7 @@ from .models import (
 )
 from .plantuml_service import PlantUMLRenderer
 from .renderer import DiagramRenderer, RenderedDiagram
+from .security import validate_source
 
 
 class DiagramRenderingService:
@@ -40,6 +41,7 @@ class DiagramRenderingService:
         output_format: OutputFormat,
         options: Mapping[str, Any] | None = None,
     ) -> RenderedDiagram:
+        validate_source(source, options)
         renderer = self._renderer_for(language)
         if output_format not in renderer.supported_formats:
             result = ValidationResult(
@@ -62,6 +64,7 @@ class DiagramRenderingService:
         source: str,
         options: Mapping[str, Any] | None = None,
     ) -> ValidationResult:
+        validate_source(source, options)
         return self._renderer_for(language).validate(source, options)
 
     def _renderer_for(self, language: DiagramLanguage) -> DiagramRenderer:

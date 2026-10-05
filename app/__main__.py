@@ -12,7 +12,15 @@ def main() -> None:
         port = int(os.getenv("PORT", "8080"))
     except ValueError:
         port = 8080
-    uvicorn.run("app.main:app", host=host, port=port)
+    uvicorn.run(
+        "app.main:app",
+        host=host,
+        port=port,
+        limit_concurrency=32,
+        backlog=32,
+        timeout_keep_alive=5,
+        access_log=False,
+    )
 
 
 if __name__ == "__main__":

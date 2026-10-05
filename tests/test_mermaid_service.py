@@ -78,12 +78,12 @@ class TestMermaidRenderFunctions(unittest.TestCase):
         puppeteer_config_path="/tmp/puppeteer.json",
     )
 
-    @patch("app.mermaid_service.subprocess.run")
+    @patch("app.mermaid_service.run_engine")
     def test_render_svg_success(self, mock_run: unittest.mock.MagicMock) -> None:
         def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             output_path = Path(command[command.index("--output") + 1])
             output_path.write_text("<svg></svg>", encoding="utf-8")
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
 
         mock_run.side_effect = run
 
@@ -94,12 +94,12 @@ class TestMermaidRenderFunctions(unittest.TestCase):
         self.assertIn("--puppeteerConfigFile", command)
         self.assertIn("/tmp/puppeteer.json", command)
 
-    @patch("app.mermaid_service.subprocess.run")
+    @patch("app.mermaid_service.run_engine")
     def test_render_png_success(self, mock_run: unittest.mock.MagicMock) -> None:
         def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             output_path = Path(command[command.index("--output") + 1])
             output_path.write_bytes(b"\x89PNG\r\n")
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
 
         mock_run.side_effect = run
 
@@ -107,7 +107,7 @@ class TestMermaidRenderFunctions(unittest.TestCase):
 
         self.assertTrue(result.startswith(b"\x89PNG"))
 
-    @patch("app.mermaid_service.subprocess.run")
+    @patch("app.mermaid_service.run_engine")
     def test_render_invalid_source_raises_validation_error(
         self,
         mock_run: unittest.mock.MagicMock,
@@ -115,8 +115,8 @@ class TestMermaidRenderFunctions(unittest.TestCase):
         mock_run.return_value = subprocess.CompletedProcess(
             ["mmdc"],
             1,
-            stdout="",
-            stderr="Error: Parse error on line 2:\nExpecting a node",
+            stdout=b"",
+            stderr=b"Error: Parse error on line 2:\nExpecting a node",
         )
 
         with self.assertRaises(MermaidValidationError) as context:
@@ -124,7 +124,7 @@ class TestMermaidRenderFunctions(unittest.TestCase):
 
         self.assertEqual(context.exception.result.errors[0].line, 2)
 
-    @patch("app.mermaid_service.subprocess.run")
+    @patch("app.mermaid_service.run_engine")
     def test_render_renderer_failure_raises_internal_error(
         self,
         mock_run: unittest.mock.MagicMock,
@@ -132,8 +132,8 @@ class TestMermaidRenderFunctions(unittest.TestCase):
         mock_run.return_value = subprocess.CompletedProcess(
             ["mmdc"],
             1,
-            stdout="",
-            stderr="Browser failed to launch from /private/path",
+            stdout=b"",
+            stderr=b"Browser failed to launch from /private/path",
         )
 
         with self.assertRaises(MermaidInternalError) as context:
@@ -142,7 +142,7 @@ class TestMermaidRenderFunctions(unittest.TestCase):
         self.assertNotIn("private", context.exception.public_message)
         self.assertNotIn("Browser failed", context.exception.public_message)
 
-    @patch("app.mermaid_service.subprocess.run")
+    @patch("app.mermaid_service.run_engine")
     def test_validate_returns_invalid_result(
         self,
         mock_run: unittest.mock.MagicMock,
@@ -150,8 +150,8 @@ class TestMermaidRenderFunctions(unittest.TestCase):
         mock_run.return_value = subprocess.CompletedProcess(
             ["mmdc"],
             1,
-            stdout="",
-            stderr="UnknownDiagramError: No diagram type detected",
+            stdout=b"",
+            stderr=b"UnknownDiagramError: No diagram type detected",
         )
 
         result = validate_diagram(self.source, config=self.config)
@@ -159,7 +159,7 @@ class TestMermaidRenderFunctions(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(len(result.errors), 1)
 
-    @patch("app.mermaid_service.subprocess.run")
+    @patch("app.mermaid_service.run_engine")
     def test_empty_source_does_not_start_subprocess(
         self,
         mock_run: unittest.mock.MagicMock,

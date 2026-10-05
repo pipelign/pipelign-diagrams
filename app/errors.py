@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Renderer-independent exceptions used at service and HTTP boundaries."""
+
+from __future__ import annotations
 
 from typing import Any
 

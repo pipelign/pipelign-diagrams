@@ -1,0 +1,12 @@
+{
+  "securityLevel": "strict",
+  "htmlLabels": false,
+  "flowchart": {"htmlLabels": false},
+  "maxTextSize": 131072,
+  "maxEdges": 500,
+  "secure": [
+    "secure", "securityLevel", "startOnLoad", "maxTextSize", "maxEdges",
+    "suppressErrorRendering", "htmlLabels", "flowchart", "themeCSS",
+    "themeVariables", "fontFamily"
+  ]
+}

@@ -1,8 +1,8 @@
+import os
 import unittest
 from unittest.mock import patch
 
 import httpx
-
 from app.errors import RendererInternalError
 from app.main import app
 from app.models import (
@@ -16,10 +16,19 @@ from app.renderer import RenderedDiagram
 
 class ApiTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
+        token_patch = patch.dict(os.environ, {"DIAGRAM_API_TOKEN": "test-token-" * 4})
+        token_patch.start()
+        self.addCleanup(token_patch.stop)
+        manifest_patch = patch(
+            "app.main.get_manifest", return_value={"manifest_sha256": "a" * 64}
+        )
+        manifest_patch.start()
+        self.addCleanup(manifest_patch.stop)
         transport = httpx.ASGITransport(app=app)
         self.client = httpx.AsyncClient(
             transport=transport,
             base_url="http://testserver",
+            headers={"Authorization": "Bearer " + "test-token-" * 4},
         )
 
     async def asyncTearDown(self) -> None:

@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Server-side Mermaid rendering through the official Mermaid CLI."""
+
+from __future__ import annotations
 
 import logging
 import os
@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import DiagramValidationError, RendererInternalError
+from .limits import MAX_OUTPUT_BYTES, RenderPolicyError
 from .logging_config import configure_logging
 from .models import (
     DiagramLanguage,
@@ -20,6 +21,7 @@ from .models import (
     ValidationIssue,
     ValidationResult,
 )
+from .process_runner import run_engine
 from .renderer import DiagramRenderer, RenderedDiagram
 
 configure_logging()
@@ -142,6 +144,8 @@ def _run_mermaid(
             "--output",
             str(output_path),
             "--quiet",
+            "--configFile",
+            "/app/mermaid/mermaid-config.json",
         ]
         if config.puppeteer_config_path:
             command.extend(["--puppeteerConfigFile", config.puppeteer_config_path])
@@ -155,12 +159,10 @@ def _run_mermaid(
             },
         )
         try:
-            completed = subprocess.run(
+            completed = run_engine(
                 command,
-                capture_output=True,
-                text=True,
+                cwd=temp_dir,
                 timeout=config.timeout_seconds,
-                check=False,
             )
         except subprocess.TimeoutExpired as exc:
             raise MermaidInternalError(
@@ -179,7 +181,9 @@ def _run_mermaid(
         )
         if completed.returncode != 0:
             result = _parse_validation_output(
-                completed.stderr or completed.stdout or ""
+                (completed.stderr or completed.stdout or b"").decode(
+                    "utf-8", errors="replace"
+                )
             )
             if result is not None:
                 raise MermaidValidationError(result)
@@ -189,7 +193,13 @@ def _run_mermaid(
             )
 
         try:
-            return output_path.read_bytes()
+            with output_path.open("rb") as output:
+                content = output.read(MAX_OUTPUT_BYTES + 1)
+            if len(content) > MAX_OUTPUT_BYTES:
+                raise RenderPolicyError(
+                    "resource_limit", "Rendering exceeded the output limit.", 413
+                )
+            return content
         except OSError as exc:
             raise MermaidInternalError(
                 "Mermaid returned no rendered output",

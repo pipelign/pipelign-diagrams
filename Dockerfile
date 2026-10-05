@@ -31,6 +31,7 @@ RUN apt-get update \
         fonts-noto-color-emoji \
         graphviz \
         openjdk-17-jre-headless \
+        util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock README.md LICENSE NOTICE THIRD_PARTY_NOTICES.md ./
@@ -40,8 +41,10 @@ COPY app ./app
 COPY deps/plantuml/plantuml*.jar /app/plantuml/plantuml.jar
 COPY deps/plantuml/license*.txt /app/plantuml/
 COPY deps/mermaid/puppeteer-config.json /app/mermaid/puppeteer-config.json
+COPY deps/mermaid/mermaid-config.json /app/mermaid/mermaid-config.json
 COPY deps/uv/LICENSE-MIT /usr/share/licenses/uv/LICENSE-MIT
 RUN uv sync --locked --no-dev \
+    && python -m app.manifest \
     && groupadd --system pipelign \
     && useradd --system --gid pipelign --create-home pipelign
 
@@ -53,7 +56,7 @@ USER pipelign
 
 EXPOSE 8080
 
-CMD ["uv", "run", "--no-sync", "pipelign-diagrams"]
+CMD ["pipelign-diagrams"]
 
 
 FROM runtime AS test
@@ -63,7 +66,7 @@ RUN uv sync --locked
 COPY tests ./tests
 USER pipelign
 
-CMD ["uv", "run", "--no-sync", "python", "-m", "unittest", "discover", "-s", "tests", "-v"]
+CMD ["python", "-m", "unittest", "discover", "-s", "tests", "-v"]
 
 
 FROM runtime AS production

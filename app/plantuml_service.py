@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Integration layer between the FastAPI application and the PlantUML CLI.
 
@@ -14,8 +12,11 @@ This module is responsible for:
   convert into HTTP responses.
 """
 
+from __future__ import annotations
+
 import logging
 import os
+import re
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from typing import Any
 from .errors import DiagramValidationError, RendererInternalError
 from .logging_config import configure_logging
 from .models import DiagramLanguage, OutputFormat, ValidationIssue, ValidationResult
+from .process_runner import run_engine
 from .renderer import DiagramRenderer, RenderedDiagram
 
 configure_logging()
@@ -110,7 +112,6 @@ def _ensure_basic_uml_structure(source: str) -> None:
 
     logger.warning(
         "Basic UML structure validation failed",
-        extra={"sourcePreview": source[:200]},
     )
     issue = ValidationIssue(
         message=(
@@ -128,6 +129,8 @@ def _build_base_command(config: PlantUMLConfig) -> list[str]:
     java_cmd = os.getenv("JAVA_CMD", "java")
     return [
         java_cmd,
+        "-DPLANTUML_SECURITY_PROFILE=SANDBOX",
+        "-Xmx512m",
         "-jar",
         config.jar_path,
         "-pipeNoStderr",
@@ -162,15 +165,6 @@ def _run_plantuml(
 
     logger.debug("PlantUML command: %s", cmd)
 
-    # Log the exact source being sent, truncated to avoid overly large log entries.
-    max_preview = 5000
-    preview = (
-        source
-        if len(source) <= max_preview
-        else source[:max_preview] + "... [truncated]"
-    )
-    logger.debug("PlantUML source (%d chars):\n%s", len(source), preview)
-
     logger.info(
         "Starting PlantUML subprocess",
         extra={
@@ -183,13 +177,10 @@ def _run_plantuml(
     )
 
     try:
-        completed = subprocess.run(
+        completed = run_engine(
             cmd,
-            input=source.encode("utf-8") if capture_binary else source,
-            capture_output=True,
-            text=not capture_binary,
+            source=source.encode("utf-8"),
             timeout=config.timeout_seconds,
-            check=False,
         )
     except subprocess.TimeoutExpired as exc:
         logger.error(
@@ -216,7 +207,14 @@ def _run_plantuml(
         completed.returncode,
     )
 
-    return completed
+    if capture_binary:
+        return completed
+    return subprocess.CompletedProcess(
+        completed.args,
+        completed.returncode,
+        completed.stdout.decode("utf-8", errors="strict"),
+        completed.stderr.decode("utf-8", errors="replace"),
+    )
 
 
 def _parse_validation_output(stderr_text: str) -> ValidationResult:
@@ -229,39 +227,15 @@ def _parse_validation_output(stderr_text: str) -> ValidationResult:
         Syntax Error?
     """
 
-    lines = [line.strip() for line in stderr_text.splitlines() if line.strip()]
-    errors: list[ValidationIssue] = []
-
-    i = 0
-    while i < len(lines):
-        if lines[i].upper() == "ERROR" and i + 2 < len(lines):
-            line_number_text = lines[i + 1]
-            message_text = lines[i + 2]
-            try:
-                line_number = int(line_number_text)
-            except ValueError:
-                line_number = None
-            errors.append(
-                ValidationIssue(
-                    message=message_text,
-                    line=line_number,
-                )
-            )
-            i += 3
-        else:
-            # Fallback: treat line as a generic error message.
-            errors.append(
-                ValidationIssue(
-                    message=lines[i],
-                    line=None,
-                )
-            )
-            i += 1
-
-    if not errors:
+    if not stderr_text.strip():
         return ValidationResult(ok=True, errors=[], warnings=[])
-
-    return ValidationResult(ok=False, errors=errors, warnings=[])
+    match = re.search(r"(?:^|\n)ERROR\s*\n(\d+)\s*\n", stderr_text)
+    line = int(match[1]) + 1 if match else None
+    return ValidationResult(
+        ok=False,
+        errors=[ValidationIssue(message="PlantUML syntax error.", line=line)],
+        warnings=[],
+    )
 
 
 def _classify_and_raise_on_failure(
@@ -287,7 +261,6 @@ def _classify_and_raise_on_failure(
                 "PlantUML validation error detected",
                 extra={
                     "returnCode": completed.returncode,
-                    "stderr": stderr_text,
                     "errorCount": len(result.errors),
                 },
             )
@@ -297,14 +270,12 @@ def _classify_and_raise_on_failure(
         "PlantUML failed with non-zero exit code",
         extra={
             "returnCode": completed.returncode,
-            "stderr": stderr_text,
         },
     )
     raise PlantUMLInternalError(
         "PlantUML failed with non-zero exit code",
         details={
             "returnCode": completed.returncode,
-            "stderr": stderr_text,
         },
     )
 
@@ -405,7 +376,6 @@ def validate_diagram(
             "PlantUML validation failed but no errors were parsed",
             details={
                 "returnCode": completed.returncode,
-                "stderr": stderr_text,
             },
         )
     return result
