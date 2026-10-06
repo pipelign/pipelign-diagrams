@@ -123,9 +123,51 @@ class TestSourcePolicy(unittest.TestCase):
             "click A callback",
             '%%{init: {securityLevel: "loose"}}%%',
             "---\nconfig: x",
+            "\ufeff \v\ufeff\n---\nconfig: {securityLevel: loose}\n---\nflowchart LR\nA --> B",
         ):
             with self.subTest(source=source), self.assertRaises(RenderPolicyError):
                 validate_source(source, None)
+
+    def test_title_only_frontmatter(self):
+        for title in ("Request flow", 'API: "quoted" response', "Café → API"):
+            source = (
+                "---\ntitle: "
+                + json.dumps(title, ensure_ascii=False)
+                + "\n---\nflowchart LR\nA --> B"
+            )
+            with self.subTest(title=title):
+                validate_source(source, None)
+                validate_source("\ufeff  " + source.replace("\n", "\r\n"), None)
+
+    def test_title_metadata_cannot_override_configuration(self):
+        for metadata in (
+            'title: "Flow"\nconfig: {securityLevel: loose}',
+            'config: {securityLevel: loose}\ntitle: "Flow"',
+            'title: "Flow"\ntitle: "Duplicate"',
+            "title: {config: unsafe}",
+            'title: &title "Flow"',
+            "title: *title",
+            'title: !!str "Flow"',
+            "title: |\n  Flow\nconfig: unsafe",
+            'title: "Flow\nconfig: unsafe"',
+            'title: "Flow" # comment',
+            'title: ""',
+            "title: " + json.dumps("x" * 256),
+            'title: "unterminated',
+            r'title: "bad\qescape"',
+        ):
+            source = "---\n" + metadata + "\n---\nflowchart LR\nA --> B"
+            with self.subTest(metadata=metadata), self.assertRaises(RenderPolicyError):
+                validate_source(source, None)
+
+    def test_title_does_not_relax_source_or_option_policy(self):
+        source = '---\ntitle: "Flow"\n---\nflowchart LR\nA --> B'
+        for suffix, options in (("\nclick A callback", None), ("", {"theme": "dark"})):
+            with (
+                self.subTest(suffix=suffix, options=options),
+                self.assertRaises(RenderPolicyError),
+            ):
+                validate_source(source + suffix, options)
 
     def test_size_unicode_and_options(self):
         for source, options, code in [
@@ -213,6 +255,19 @@ class TestEnginePolicies(unittest.TestCase):
             secret.write_text("Alice -> Bob: PRIVATE_INCLUDE_MARKER")
             with self.assertRaises(PlantUMLValidationError):
                 render_svg("@startuml\n!include " + str(secret) + "\n@enduml")
+
+    def test_mermaid_frontmatter_title_is_visible_svg_text(self):
+        from app.mermaid_service import render_svg
+        from xml.etree import ElementTree
+
+        source = '---\ntitle: "Request flow"\n---\nflowchart LR\nA --> B'
+        validate_source(source, None)
+        svg = ElementTree.fromstring(render_svg(source))
+        texts = [
+            "".join(node.itertext())
+            for node in svg.iter("{http://www.w3.org/2000/svg}text")
+        ]
+        self.assertIn("Request flow", texts)
 
     def test_mermaid_emits_svg_text_without_foreign_html(self):
         from app.mermaid_service import render_svg

@@ -53,7 +53,7 @@ def build_manifest():
     }
     manifest = {
         "contract_version": 1,
-        "service_version": "2.1.0",
+        "service_version": "2.1.1",
         "policy_version": POLICY_VERSION,
         "source_sha256": sha256(canonical_json(source_hashes)).hexdigest(),
         "engines": {

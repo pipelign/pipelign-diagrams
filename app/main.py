@@ -31,7 +31,7 @@ UI_PATH = Path(__file__).with_name("static") / "index.html"
 
 app = FastAPI(
     title="pipelign-diagrams",
-    version="2.1.0",
+    version="2.1.1",
     description="Render and validate PlantUML and Mermaid diagrams.",
 )
 app.add_middleware(RendererGate)

@@ -2,6 +2,7 @@
 
 import asyncio
 import hmac
+import json
 import os
 import re
 from contextlib import contextmanager
@@ -18,6 +19,25 @@ _FORBIDDEN = re.compile(
     r"|^\s*click\s|%%\s*\{",
     re.IGNORECASE | re.MULTILINE,
 )
+
+
+_TITLE_FRONTMATTER = re.compile(
+    r'---[ \t]*\r?\n[ \t]*title:[ \t]*("(?:[^"\\\r\n]|\\[^\r\n])*")[ \t]*\r?\n---[ \t]*(?:\r?\n|$)'
+)
+
+
+def _title_only_frontmatter(source):
+    # One JSON-compatible quoted scalar is a deliberately small YAML subset.
+    # Do not load arbitrary YAML: aliases, tags, duplicate keys, config and
+    # multiline mappings must never reach Mermaid's configuration merger.
+    match = _TITLE_FRONTMATTER.match(source)
+    if not match:
+        return False
+    try:
+        title = json.loads(match[1])
+    except ValueError:
+        return False
+    return bool(title.strip()) and len(title) <= 255
 
 
 def validate_source(source, options):
@@ -37,7 +57,10 @@ def validate_source(source, options):
             "Renderer options are fixed by the restricted profile.",
             422,
         )
-    if _FORBIDDEN.search(source) or source.lstrip().startswith("---"):
+    code = re.sub(r"^[\s\ufeff]+", "", source)
+    if _FORBIDDEN.search(source) or (
+        code.startswith("---") and not _title_only_frontmatter(code)
+    ):
         raise RenderPolicyError(
             "policy_rejected",
             "Use self-contained diagram code without includes, external resources, links or configuration overrides.",

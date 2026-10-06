@@ -5,7 +5,7 @@ MAX_REQUEST_BYTES = 768 * 1024
 MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 MAX_DIAGNOSTIC_BYTES = 16 * 1024
 ENGINE_TIMEOUT_SECONDS = 20
-POLICY_VERSION = "pipelign-restricted-v1"
+POLICY_VERSION = "pipelign-restricted-v2"
 
 
 class RenderPolicyError(Exception):

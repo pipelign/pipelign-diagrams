@@ -265,3 +265,22 @@ docker compose build pipelign-diagrams
 The generated report is placed under the ignored `build/` directory. Review
 `NOASSERTION` and `NONE` results manually before distributing an image; automated
 license detection is useful inventory data, not a legal conclusion.
+
+### Diagram titles
+
+Restricted policy `pipelign-restricted-v2` permits Mermaid title-only frontmatter:
+
+```mermaid
+---
+title: "Request flow"
+---
+flowchart LR
+  Client --> API
+```
+
+The header accepts exactly one `title` field containing a JSON-compatible,
+double-quoted string of at most 255 characters. Other YAML fields, tags, aliases,
+multiline declarations and configuration overrides remain rejected. PlantUML and
+Mermaid diagram types with native title directives may continue using those.
+The original source is rendered unchanged. Service version 2.1.1 requires clients
+to recognize the new policy version and record the rebuilt image/manifest identity.

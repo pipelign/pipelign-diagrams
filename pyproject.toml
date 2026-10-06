@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pipelign-diagrams"
-version = "2.1.0"
+version = "2.1.1"
 description = "A server-side PlantUML and Mermaid diagram rendering service"
 readme = "README.md"
 license = "Apache-2.0"
