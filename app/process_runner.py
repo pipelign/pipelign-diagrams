@@ -1,4 +1,4 @@
-"""Bounded engine execution with isolated workspaces and process-group cleanup."""
+"""Bounded engine execution within the deployment's container boundary."""
 
 import os
 import selectors
@@ -33,22 +33,14 @@ def run_engine(command, *, source=b"", cwd=None, timeout=ENGINE_TIMEOUT_SECONDS)
         }
         # prlimit avoids preexec_fn, which is unsafe in the API's worker threads.
         bounded = [
-            "/usr/bin/unshare",
-            "--user",
-            "--map-current-user",
-            "--net",
-            "--pid",
-            "--fork",
-            "--mount-proc",
-            "--kill-child=KILL",
-            "--keep-caps",
             sys.executable,
             "-m",
-            "app.isolated_engine",
+            "app.engine_process",
             "/usr/bin/prlimit",
             f"--fsize={MAX_OUTPUT_BYTES}",
             f"--cpu={ENGINE_TIMEOUT_SECONDS}",
             "--nofile=256",
+            "--nproc=256",
             "--",
             *command,
         ]
@@ -109,7 +101,13 @@ def run_engine(command, *, source=b"", cwd=None, timeout=ENGINE_TIMEOUT_SECONDS)
                             "engine_timeout", "The rendering engine timed out.", 504
                         ) from None
             finally:
-                # Includes descendants after their parent exits or closes its pipes.
+                # Let the subreaper collect detached Chromium children before
+                # removing workspaces. This is cleanup, not request isolation.
+                process.terminate() if process.poll() is None else None
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:

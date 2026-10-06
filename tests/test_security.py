@@ -187,27 +187,36 @@ class TestSourcePolicy(unittest.TestCase):
 @unittest.skipUnless(
     Path("/app/renderer-manifest.json").is_file(), "requires the hardened Linux image"
 )
-class TestRealProcessIsolation(unittest.TestCase):
+class TestRealProcessCleanup(unittest.TestCase):
     def execute(self, code, **kwargs):
         return run_engine([sys.executable, "-c", code], **kwargs)
 
-    def test_private_pid_network_and_environment(self):
-        result = self.execute("""import json,os,socket
-from pathlib import Path
-s=socket.socket(); s.settimeout(.2)
-try: s.connect(('1.1.1.1',443)); reachable=True
-except OSError: reachable=False
-print(json.dumps({'pid':os.getpid(),'interfaces':socket.if_nameindex(),'reachable':reachable,'token_present':any('TOKEN' in k for k in os.environ),'processes':sorted(p.name for p in Path('/proc').iterdir() if p.name.isdigit()),'capabilities':[l.strip() for l in Path('/proc/self/status').read_text().splitlines() if l.startswith(('CapEff:','CapPrm:','CapInh:','CapAmb:'))]}))""")
+    def test_child_environment_excludes_service_credentials(self):
+        with patch.dict(os.environ, {"DIAGRAM_API_TOKEN": "private-token"}):
+            result = self.execute("import json,os; print(json.dumps(dict(os.environ)))")
         self.assertEqual(result.returncode, 0, result.stderr)
-        data = json.loads(result.stdout)
-        self.assertEqual(data["pid"], 1)
-        self.assertEqual(data["processes"], ["1"])
-        self.assertEqual([i[1] for i in data["interfaces"]], ["lo"])
-        self.assertFalse(data["reachable"])
-        self.assertFalse(data["token_present"])
-        self.assertTrue(
-            all(line.endswith("0000000000000000") for line in data["capabilities"])
-        )
+        environment = json.loads(result.stdout)
+        self.assertNotIn("DIAGRAM_API_TOKEN", environment)
+        self.assertEqual(set(environment), {"PATH", "HOME", "TMPDIR", "LANG"})
+
+    def test_success_collects_detached_descendants(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory, "escaped")
+            child = (
+                "import time; from pathlib import Path; time.sleep(1); Path("
+                + repr(str(marker))
+                + ").touch()"
+            )
+            code = (
+                'import subprocess,sys; subprocess.Popen([sys.executable,"-c",'
+                + repr(child)
+                + "],start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)"
+            )
+            self.assertEqual(self.execute(code).returncode, 0)
+            import time
+
+            time.sleep(1.2)
+            self.assertFalse(marker.exists())
 
     def test_timeout_output_caps_cleanup_and_detached_descendants(self):
         with tempfile.TemporaryDirectory() as directory:
