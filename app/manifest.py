@@ -53,7 +53,7 @@ def build_manifest():
     }
     manifest = {
         "contract_version": 1,
-        "service_version": "2.1.1",
+        "service_version": "2.2.0",
         "policy_version": POLICY_VERSION,
         "source_sha256": sha256(canonical_json(source_hashes)).hexdigest(),
         "engines": {
@@ -81,6 +81,10 @@ def build_manifest():
             _version("dpkg-query", "-W").encode()
         ).hexdigest(),
         "effective_options": {
+            "execution_boundary": "container",
+            "puppeteer": json.loads(
+                Path("/app/mermaid/puppeteer-config.json").read_bytes()
+            ),
             "plantuml_security_profile": "SANDBOX",
             "mermaid": json.loads(
                 Path("/app/mermaid/mermaid-config.json").read_bytes()

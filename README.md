@@ -112,22 +112,25 @@ engine stdout/output files at 4 MiB; diagnostics at 16 KiB. Each engine has a
 20-second wall deadline. Includes, links, external images and configuration
 overrides are unsupported. No bundled include libraries are approved yet.
 PlantUML uses SANDBOX and a 512 MiB Java heap. Mermaid uses strict mode, SVG text
-labels and locked security settings. Chromium runs with its namespace sandbox.
+labels and locked security settings. Chromium runs explicitly with `--no-sandbox`.
+The deployment's container is the execution boundary; neither a per-render
+namespace nor Chromium's internal sandbox separates requests. A compromised
+replica can affect later renders until the replica is replaced.
 
-Each render starts in private Linux user, PID, mount and network namespaces. Only
-loopback is enabled for Puppeteer/Chromium; outbound network routes do not exist.
-Namespace capabilities are dropped before execution. The API environment and
-processes are not visible through the engine's `/proc`. Engines inherit only an
-allowlisted environment without the bearer secret. Killing the namespace init
-also kills detached descendants; temporary directories are removed on failure.
-The HTTP process retains its ingress network. It has no rendering egress path.
+Engines inherit an allowlisted environment without the bearer secret. A Linux
+subreaper collects ordinary descendants (including detached Chromium processes)
+on success, timeout and failure, before temporary workspaces are removed. This
+is process cleanup, not containment of malicious code. Processes share the
+container's filesystem, `/proc` and network. Deployments must enforce private
+HTTPS ingress, machine authentication and denied renderer-initiated Internet and
+unnecessary VNet egress; do not inject application credentials, useful workload
+identities or shared application mounts.
 
 Use the provided non-root Compose limits: 1 CPU, 2 GiB memory, 256 PIDs, read-only
-root, 128 MiB temporary filesystem, no capabilities and no new privileges. Linux
-must permit unprivileged user namespaces and Chromium sandboxing. `/ready` fails
-closed if unavailable; never add privileged mode or disable sandboxing to work
-around this. Verify these prerequisites on the target Azure Container Apps
-runtime before deployment; local Docker success is not Azure verification.
+root, 128 MiB temporary filesystem, no capabilities and no new privileges.
+Azure must separately enforce and verify its supported resource/network controls;
+Compose limits are not evidence of Azure enforcement. Never grant privileged
+execution. `/ready` authenticates and fails closed when real engines cannot run.
 
 The build manifest records actual engine/font versions and hashes, fixed options,
 policy version and source hash. Deploy by immutable registry digest and retain
@@ -284,3 +287,10 @@ multiline declarations and configuration overrides remain rejected. PlantUML and
 Mermaid diagram types with native title directives may continue using those.
 The original source is rendered unchanged. Service version 2.1.1 requires clients
 to recognize the new policy version and record the rebuilt image/manifest identity.
+
+### Container-boundary release 2.2.0
+
+Removes the per-render `unshare` wrapper and runs Chromium with `--no-sandbox`
+for ordinary private Azure Container Apps. Source restrictions remain
+`pipelign-restricted-v2`; the manifest now records the execution boundary and
+actual Puppeteer launch options. Clients must adopt the newly tested image digest.
